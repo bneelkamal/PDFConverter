@@ -1,0 +1,5 @@
+streamlit
+pdf2image
+Pillow
+pdf2docx
+# Add specific versions if needed, e.g., streamlit==1.28.0
