@@ -165,8 +165,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("PDF-WORD-IMAGE Converter")
 st.sidebar.info(
     """
-   PDF to Image/Word Converter
-   Image to PDF Converter with OCR
+   Convert PDFs to Images/Word, or combine Images into a searchable PDF.
     """
 )
 st.sidebar.markdown("---")
