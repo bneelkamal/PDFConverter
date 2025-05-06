@@ -149,6 +149,8 @@ def images_to_searchable_pdf_st(image_bytes_list, filenames, ocr_language='eng')
         progress_bar_placeholder.empty()
         return None
 
+    output_pdf_writer.producer = "" 
+    
     final_pdf_buffer = BytesIO()
     output_pdf_writer.write(final_pdf_buffer)
     final_pdf_buffer.seek(0)
