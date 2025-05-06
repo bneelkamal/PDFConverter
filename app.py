@@ -122,16 +122,16 @@ def images_to_pdf_st(image_bytes_list, filenames):
         return None
 
 # --- Sidebar for Poppler Info ---
-st.sidebar.title("⚠️ Important Note")
-st.sidebar.info(
-    """
-    **PDF to Image conversion requires Poppler.**
+#st.sidebar.title("⚠️ Important Note")
+#st.sidebar.info(
+#    """
+#    **PDF to Image conversion requires Poppler.**
 
-    - **If running locally:** Ensure Poppler is installed and added to your PATH.
-      Download for Windows: [Poppler Windows Releases](https://github.com/oschwartz10612/poppler-windows/releases/)
-    - **If deploying:** Include Poppler in your environment (e.g., add `poppler-utils` to `packages.txt` for Streamlit Cloud).
-    """
-)
+#    - **If running locally:** Ensure Poppler is installed and added to your PATH.
+#      Download for Windows: [Poppler Windows Releases](https://github.com/oschwartz10612/poppler-windows/releases/)
+#    - **If deploying:** Include Poppler in your environment (e.g., add `poppler-utils` to `packages.txt` for Streamlit Cloud).
+#    """
+#)
 
 # --- Initialize Session State ---
 # Use unique keys for results from different conversion types
