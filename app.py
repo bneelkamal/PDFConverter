@@ -160,29 +160,13 @@ def images_to_searchable_pdf_st(image_bytes_list, filenames, ocr_language='eng')
     return final_pdf_buffer
 
 # --- Sidebar for Dependency Info ---
-st.sidebar.title("⚠️ Important Notes & Setup")
+st.sidebar.title("File Converter App")
 st.sidebar.markdown("---")
-st.sidebar.header("Poppler (for PDF to Image)")
+st.sidebar.header("PDF-WORD-IMAGE Converter")
 st.sidebar.info(
     """
-    PDF to Image conversion requires Poppler.
-    - **Local Machine:** Ensure Poppler is installed and its `bin` directory is added to your system's PATH.
-      - Windows: [Poppler Windows Releases by oSchwartz](https://github.com/oschwartz10612/poppler-windows/releases/) (Extract and add the `poppler-ver-xxx/bin` to PATH).
-      - Linux: `sudo apt-get install poppler-utils`
-      - macOS: `brew install poppler`
-    - **Deployment (e.g., Streamlit Cloud):** Include Poppler in your environment (e.g., add `poppler-utils` to `packages.txt`).
-    """
-)
-st.sidebar.markdown("---")
-st.sidebar.header("Tesseract OCR (for Image to Searchable PDF)")
-st.sidebar.info(
-    """
-    Image to Searchable PDF conversion uses Tesseract OCR.
-    - **Installation:** Ensure Tesseract OCR engine (v4.0 or higher recommended) is installed.
-      - Official Guide: [Tesseract Installation](https://tesseract-ocr.github.io/tessdoc/Installation.html)
-    - **PATH:** Add Tesseract's installation directory to your system's PATH environment variable.
-    - **Language Data:** Download and place language data files (e.g., `eng.traineddata`) into Tesseract's `tessdata` sub-directory (usually in the Tesseract installation folder).
-      - Language Data: [tessdata_fast (recommended)](https://github.com/tesseract-ocr/tessdata_fast) or [tessdata_best](https://github.com/tesseract-ocr/tessdata_best).
+   PDF to Image/Word Converter
+   Image to PDF Converter with OCR
     """
 )
 st.sidebar.markdown("---")
