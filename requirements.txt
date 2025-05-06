@@ -3,6 +3,4 @@ pdf2image
 Pillow
 pdf2docx
 pytesseract
-PdfWriter
-PdfReader
 pypdf
