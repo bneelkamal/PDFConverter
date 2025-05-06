@@ -1,1 +1,9 @@
+# packages.txt
 poppler-utils
+fonts-liberation # Good open-source sans/serif/mono fonts
+fonts-freefont-ttf # More free fonts
+# For common Microsoft fonts (may require accepting EULA during build, might be tricky):
+# ttf-mscorefonts-installer
+# Or consider installing alternatives like Noto fonts:
+fonts-noto-core
+fonts-noto-cjk # For East Asian languages if needed
