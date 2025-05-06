@@ -3,4 +3,5 @@ pdf2image
 Pillow
 pdf2docx
 pytesseract
-# Add specific versions if needed, e.g., streamlit==1.28.0
+PdfWriter
+PdfReader
