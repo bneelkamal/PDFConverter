@@ -3,3 +3,10 @@ fonts-liberation
 fonts-freefont-ttf
 fonts-noto-core
 fonts-noto-cjk
+tesseract-ocr
+tesseract-ocr-eng
+tesseract-ocr-deu
+tesseract-ocr-fra
+tesseract-ocr-spa
+tesseract-ocr-jpn
+tesseract-ocr-chi-sim
