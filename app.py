@@ -16,10 +16,10 @@ import ocrmypdf # For calling ocrmypdf.ocr()
 # Import specific exceptions from ocrmypdf to handle them correctly
 from ocrmypdf.exceptions import (
     MissingDependencyError as OCRmyPDFMissingDependencyError,
-    TesseractError as OCRmyPDFTesseractError, # For Tesseract-specific issues from ocrmypdf
-    EncryptedPdfError as OCRmyPDFEncryptedPdfError, # If you want to handle encrypted PDFs specifically
-    PriorOcrFoundError as OCRmyPDFPriorOcrFoundError, # If you want to handle PDFs that already have OCR
-    OcrmypdfError as OCRmyPDFGeneralError # A base error for other ocrmypdf issues
+    # TesseractError is not directly exposed here, removed import
+    EncryptedPdfError as OCRmyPDFEncryptedPdfError, 
+    PriorOcrFoundError as OCRmyPDFPriorOcrFoundError, 
+    OcrmypdfError as OCRmyPDFGeneralError # Base error for ocrmypdf issues
 )
 
 # --- Configuration & Page Setup ---
@@ -141,8 +141,7 @@ def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=
     except OCRmyPDFMissingDependencyError as e: 
         # This will catch missing 'tesseract' or 'gs' (Ghostscript)
         st.error(f"{context_section}-ocrmypdf: Missing system dependency: {e}. Ensure Tesseract and Ghostscript are installed and in PATH (or packages.txt for deployment)."); stxt.empty(); return None
-    except OCRmyPDFTesseractError as e: # Catch other Tesseract errors during execution by ocrmypdf
-        st.error(f"{context_section}-ocrmypdf: A Tesseract-related error occurred: {e}. Ensure Tesseract is correctly installed and language data is available."); stxt.empty(); return None
+    # Removed specific TesseractError catch as it's not directly available
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e: 
         st.error(f"{context_section}-ocrmypdf: Image too large within PDF: {e}. The PDF contains an image that exceeds pixel limits.")
         stxt.empty(); return None
@@ -150,14 +149,12 @@ def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=
         st.error(f"{context_section}-ocrmypdf: The PDF is encrypted and cannot be processed without decryption first."); stxt.empty(); return None
     except OCRmyPDFPriorOcrFoundError:
         st.warning(f"{context_section}-ocrmypdf: PDF already has OCR. Set 'force_ocr=True' if re-processing is intended (already True by default here)."); 
-        # This is a warning, but ocrmypdf might still proceed or skip based on settings.
-        # If it returns successfully, we still use the output.
-        output_pdf_buffer.seek(0) # Ensure buffer is readable even after this warning
+        output_pdf_buffer.seek(0) 
         stxt.success(f"{context_section}-OCR processing (prior OCR found, re-processed or skipped based on settings)."); time.sleep(2); stxt.empty()
         return output_pdf_buffer.getvalue() if output_pdf_buffer.getbuffer().nbytes > 0 else None
     except OCRmyPDFGeneralError as e: # Catch other ocrmypdf specific errors
         st.error(f"{context_section}-ocrmypdf: An ocrmypdf specific error occurred: {e}"); stxt.empty(); return None
-    except Exception as e: # General fallback for unexpected errors
+    except Exception as e: # General fallback for unexpected errors, including potential Tesseract runtime issues surfaced by ocrmypdf
         st.error(f"{context_section}-ocrmypdf: An unexpected error occurred during OCR: {e}"); stxt.empty(); return None
 
 @st.cache_data(show_spinner=False)
