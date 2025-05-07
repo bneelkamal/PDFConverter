@@ -168,12 +168,12 @@ st.sidebar.markdown("---")
 st.sidebar.header("PDF-WORD-IMAGE-MERGE")
 st.sidebar.info(
     f"""
-    Convert PDFs, Combine Images, or Merge PDFs (with optional OCR).
-    - OCR (Sec 2 & 3) requires Tesseract & language packs.
-    - PDF to Image (Sec 1) requires Poppler.
-    - If deployed (e.g. Streamlit Cloud), add `tesseract-ocr`, `tesseract-ocr-eng` (and other langs), `ghostscript`, `poppler-utils` to `packages.txt`. And `ocrmypdf` to `requirements.txt`.
-    (pypdf: {pypdf_version}, ocrmypdf available if imported)
-    """
+    Convert PDFs, Combine Images, or Merge PDFs (with optional OCR)."""
+    #- OCR (Sec 2 & 3) requires Tesseract & language packs.
+    #- PDF to Image (Sec 1) requires Poppler.
+    #- If deployed (e.g. Streamlit Cloud), add `tesseract-ocr`, `tesseract-ocr-eng` (and other langs), `ghostscript`, `poppler-utils` to `packages.txt`. And `ocrmypdf` to `requirements.txt`.
+    #(pypdf: {pypdf_version}, ocrmypdf available if imported)
+    #"""
 )
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Refreshed: {time.strftime('%Y%m%d-%H%M%S')}")
