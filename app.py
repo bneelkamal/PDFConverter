@@ -3,16 +3,24 @@ import os
 import tempfile
 from io import BytesIO
 import zipfile
-from PIL import Image, UnidentifiedImageError # Added UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError 
 from pdf2image import convert_from_bytes
-from pdf2image.exceptions import PDFPageCountError, PDFSyntaxError # More specific pdf2image errors
+from pdf2image.exceptions import PDFPageCountError, PDFSyntaxError 
 from pdf2docx import Converter
 import base64
 import time
 
 import pytesseract 
 from pypdf import PdfWriter, PdfReader, __version__ as pypdf_version
-import ocrmypdf 
+import ocrmypdf # For calling ocrmypdf.ocr()
+# Import specific exceptions from ocrmypdf to handle them correctly
+from ocrmypdf.exceptions import (
+    MissingDependencyError as OCRmyPDFMissingDependencyError,
+    TesseractError as OCRmyPDFTesseractError, # For Tesseract-specific issues from ocrmypdf
+    EncryptedPdfError as OCRmyPDFEncryptedPdfError, # If you want to handle encrypted PDFs specifically
+    PriorOcrFoundError as OCRmyPDFPriorOcrFoundError, # If you want to handle PDFs that already have OCR
+    OcrmypdfError as OCRmyPDFGeneralError # A base error for other ocrmypdf issues
+)
 
 # --- Configuration & Page Setup ---
 st.set_page_config(page_title="File Converter Hub", layout="wide", initial_sidebar_state="expanded")
@@ -28,7 +36,7 @@ def pdf_to_images_st(pdf_bytes, dpi, img_format, poppler_path=None):
         return images
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e:
         st.error(f"Image too large: {e}. The PDF page dimensions at the selected DPI are too big. Try reducing the DPI setting.")
-        raise # Re-raise to be caught by the main conversion loop for status update
+        raise 
     except PDFPageCountError:
         st.error("Could not get page count from PDF. It might be corrupted or password-protected without user password.")
         raise
@@ -38,7 +46,6 @@ def pdf_to_images_st(pdf_bytes, dpi, img_format, poppler_path=None):
     except Exception as e:
         if "poppler" in str(e).lower() or "pdftoppm" in str(e).lower(): 
             st.info("PDF to Image: Ensure Poppler is set up (PATH/packages.txt).")
-        # st.error(f"An unexpected error occurred during PDF to Image conversion: {e}") # Error displayed per file by caller
         raise 
         
 @st.cache_data(show_spinner=False)
@@ -53,7 +60,7 @@ def pdf_to_word_st(pdf_bytes):
         with tempfile.NamedTemporaryFile(delete=True, suffix=".docx") as temp_docx_file:
             temp_docx_path = temp_docx_file.name
             cv = Converter(temp_pdf_path)
-            cv.convert(temp_docx_path) # Removed start=0, end=None as they are defaults
+            cv.convert(temp_docx_path) 
             cv.close()
             with open(temp_docx_path, 'rb') as f_docx: 
                 output_docx_buffer.write(f_docx.read())
@@ -62,7 +69,6 @@ def pdf_to_word_st(pdf_bytes):
     except Exception as e:
         if "tesseract" in str(e).lower(): 
             st.info("PDF to Word (Scanned): Ensure Tesseract is set up for pdf2docx OCR.")
-        # st.error(f"An unexpected error occurred during PDF to Word conversion: {e}") # Error displayed per file by caller
         raise
     finally:
         if temp_pdf_path and os.path.exists(temp_pdf_path):
@@ -84,7 +90,7 @@ def create_zip_from_images(images, base_filename, img_format):
             elif img.mode == 'P': 
                 save_img = img.convert('RGB')
             save_img.save(img_byte_arr, format=img_format.upper())
-            img_byte_arr = img_byte_arr.getvalue() # Get bytes after saving
+            img_byte_arr = img_byte_arr.getvalue() 
             zip_file.writestr(img_filename, img_byte_arr)
     zip_buffer.seek(0)
     return zip_buffer
@@ -132,21 +138,32 @@ def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=
         output_pdf_buffer.seek(0)
         stxt.success(f"{context_section}-OCR processing on PDF complete!"); time.sleep(2); stxt.empty()
         return output_pdf_buffer.getvalue()
-    except ocrmypdf.exceptions.TesseractNotFoundError: 
-        st.error(f"{context_section}-ocrmypdf: Tesseract OCR not found. Check setup."); stxt.empty(); return None
-    except ocrmypdf.exceptions.MissingDependencyError as e: 
-        st.error(f"{context_section}-ocrmypdf: Missing dependency: {e}. (e.g., ghostscript)."); stxt.empty(); return None
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e: # Catch Pillow's error if ocrmypdf passes it up
+    except OCRmyPDFMissingDependencyError as e: 
+        # This will catch missing 'tesseract' or 'gs' (Ghostscript)
+        st.error(f"{context_section}-ocrmypdf: Missing system dependency: {e}. Ensure Tesseract and Ghostscript are installed and in PATH (or packages.txt for deployment)."); stxt.empty(); return None
+    except OCRmyPDFTesseractError as e: # Catch other Tesseract errors during execution by ocrmypdf
+        st.error(f"{context_section}-ocrmypdf: A Tesseract-related error occurred: {e}. Ensure Tesseract is correctly installed and language data is available."); stxt.empty(); return None
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e: 
         st.error(f"{context_section}-ocrmypdf: Image too large within PDF: {e}. The PDF contains an image that exceeds pixel limits.")
         stxt.empty(); return None
-    except Exception as e: 
-        st.error(f"{context_section}-ocrmypdf: Error during OCR: {e}"); stxt.empty(); return None
+    except OCRmyPDFEncryptedPdfError:
+        st.error(f"{context_section}-ocrmypdf: The PDF is encrypted and cannot be processed without decryption first."); stxt.empty(); return None
+    except OCRmyPDFPriorOcrFoundError:
+        st.warning(f"{context_section}-ocrmypdf: PDF already has OCR. Set 'force_ocr=True' if re-processing is intended (already True by default here)."); 
+        # This is a warning, but ocrmypdf might still proceed or skip based on settings.
+        # If it returns successfully, we still use the output.
+        output_pdf_buffer.seek(0) # Ensure buffer is readable even after this warning
+        stxt.success(f"{context_section}-OCR processing (prior OCR found, re-processed or skipped based on settings)."); time.sleep(2); stxt.empty()
+        return output_pdf_buffer.getvalue() if output_pdf_buffer.getbuffer().nbytes > 0 else None
+    except OCRmyPDFGeneralError as e: # Catch other ocrmypdf specific errors
+        st.error(f"{context_section}-ocrmypdf: An ocrmypdf specific error occurred: {e}"); stxt.empty(); return None
+    except Exception as e: # General fallback for unexpected errors
+        st.error(f"{context_section}-ocrmypdf: An unexpected error occurred during OCR: {e}"); stxt.empty(); return None
 
 @st.cache_data(show_spinner=False)
 def image_to_single_page_pdf_bytes(image_file_object, filename_for_error="image"):
     """Converts an image UploadedFile object to bytes of a single-page PDF."""
     try:
-        # It's good practice to seek(0) before reading if the object might have been read before.
         image_file_object.seek(0) 
         img_pil = Image.open(image_file_object) 
         if img_pil.mode == 'RGBA' or img_pil.mode == 'P':
@@ -174,9 +191,11 @@ st.sidebar.info(
     - **Sec 1:** PDF to Image/Word
     - **Sec 2:** Combine PDF/Images (opt. OCR)
 
-    **Setup Notes (for deployed apps like Streamlit Cloud):**
-    - **`requirements.txt`:** `streamlit`, `Pillow`, `pdf2image`, `pdf2docx`, `pytesseract`, `pypdf`, `ocrmypdf`
-    - **`packages.txt`:** `tesseract-ocr`, `tesseract-ocr-eng` (and other languages e.g., `tesseract-ocr-deu`), `ghostscript`, `poppler-utils`
+    **Important Setup for Deployed Apps (e.g., Streamlit Cloud):**
+    - **`requirements.txt` should include:** `streamlit`, `Pillow`, `pdf2image`, `pdf2docx`, `pytesseract`, `pypdf`, `ocrmypdf`
+    - **`packages.txt` should include:** `tesseract-ocr`, `tesseract-ocr-eng` (and other language packs like `tesseract-ocr-deu`), `ghostscript`, `poppler-utils`
+    
+    Failure to include these system packages in `packages.txt` will lead to errors, especially `MissingDependencyError` for `gs` (Ghostscript) or Tesseract.
     (pypdf: {pypdf_version})
     """
 )
@@ -260,7 +279,7 @@ if uploaded_pdf_files_s1:
                             docx_bytes_io = pdf_to_word_st(pdf_bytes_in)
                             if docx_bytes_io: result_entry.update({'output': docx_bytes_io.getvalue(), 'status': 'success', 'messages': ["Word document generated."]})
                             else: result_entry['messages'].append("Word conversion returned no data.")
-                    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e_bomb: # Catch specific error here too
+                    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e_bomb: 
                         result_entry['messages'].append(f"Error for '{file_obj.name}': Image too large (Decompression Bomb). Try lower DPI. Details: {e_bomb}")
                     except Exception as e: 
                         result_entry['messages'].append(f"Error processing '{file_obj.name}': {str(e)}")
@@ -362,10 +381,9 @@ if st.session_state.s2_ordered_items:
         with cols_s2_order[0]: st.write(f"{i+1}.")
         with cols_s2_order[1]:
             if item_type == 'image':
-                # Display image preview, ensure pointer is reset for potential re-reads
                 current_pos = file_obj.tell()
                 st.image(file_obj.getvalue(), width=50, caption="Img")
-                file_obj.seek(current_pos) # Reset to original position
+                file_obj.seek(current_pos) 
             else: st.markdown(f"📄 **PDF**", help=item_name)
         with cols_s2_order[2]: st.write(item_name)
         with cols_s2_order[3]: 
@@ -413,13 +431,12 @@ if st.session_state.s2_ordered_items:
 
                 pdf_item_bytes_s2 = None
                 if item_type_s2 == 'image':
-                    # Ensure file pointer is at the beginning before passing to image_to_single_page_pdf_bytes
                     file_obj_s2.seek(0) 
                     pdf_item_bytes_s2 = image_to_single_page_pdf_bytes(file_obj_s2, filename_for_error=item_name_s2)
                 elif item_type_s2 == 'pdf':
                     file_obj_s2.seek(0)
                     pdf_item_bytes_s2 = file_obj_s2.getvalue()
-                    file_obj_s2.seek(0) # Good practice to reset after getvalue if it might be used again
+                    file_obj_s2.seek(0) 
                 
                 if pdf_item_bytes_s2:
                     try:
