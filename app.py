@@ -3,8 +3,9 @@ import os
 import tempfile
 from io import BytesIO
 import zipfile
-from PIL import Image
+from PIL import Image, UnidentifiedImageError # Added UnidentifiedImageError
 from pdf2image import convert_from_bytes
+from pdf2image.exceptions import PDFPageCountError, PDFSyntaxError # More specific pdf2image errors
 from pdf2docx import Converter
 import base64
 import time
@@ -22,9 +23,22 @@ st.write("Convert PDFs to other formats (Sec 1), or Combine various files into a
 @st.cache_data(show_spinner=False)
 def pdf_to_images_st(pdf_bytes, dpi, img_format, poppler_path=None):
     """Converts PDF bytes to a list of PIL Image objects."""
-    try: images = convert_from_bytes(pdf_bytes, dpi=dpi, fmt=img_format.lower(), poppler_path=poppler_path); return images
+    try: 
+        images = convert_from_bytes(pdf_bytes, dpi=dpi, fmt=img_format.lower(), poppler_path=poppler_path)
+        return images
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e:
+        st.error(f"Image too large: {e}. The PDF page dimensions at the selected DPI are too big. Try reducing the DPI setting.")
+        raise # Re-raise to be caught by the main conversion loop for status update
+    except PDFPageCountError:
+        st.error("Could not get page count from PDF. It might be corrupted or password-protected without user password.")
+        raise
+    except PDFSyntaxError:
+        st.error("PDF syntax error. The PDF might be corrupted or not a valid PDF.")
+        raise
     except Exception as e:
-        if "poppler" in str(e).lower() or "pdftoppm" in str(e).lower(): st.info("PDF to Image: Ensure Poppler is set up (PATH/packages.txt).")
+        if "poppler" in str(e).lower() or "pdftoppm" in str(e).lower(): 
+            st.info("PDF to Image: Ensure Poppler is set up (PATH/packages.txt).")
+        # st.error(f"An unexpected error occurred during PDF to Image conversion: {e}") # Error displayed per file by caller
         raise 
         
 @st.cache_data(show_spinner=False)
@@ -32,19 +46,30 @@ def pdf_to_word_st(pdf_bytes):
     """Converts PDF bytes to Word (.docx) bytes."""
     temp_pdf_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf_file: temp_pdf_file.write(pdf_bytes); temp_pdf_path = temp_pdf_file.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf_file: 
+            temp_pdf_file.write(pdf_bytes)
+            temp_pdf_path = temp_pdf_file.name
         output_docx_buffer = BytesIO()
         with tempfile.NamedTemporaryFile(delete=True, suffix=".docx") as temp_docx_file:
-            temp_docx_path = temp_docx_file.name; cv = Converter(temp_pdf_path); cv.convert(temp_docx_path); cv.close()
-            with open(temp_docx_path, 'rb') as f_docx: output_docx_buffer.write(f_docx.read())
-        output_docx_buffer.seek(0); return output_docx_buffer
+            temp_docx_path = temp_docx_file.name
+            cv = Converter(temp_pdf_path)
+            cv.convert(temp_docx_path) # Removed start=0, end=None as they are defaults
+            cv.close()
+            with open(temp_docx_path, 'rb') as f_docx: 
+                output_docx_buffer.write(f_docx.read())
+        output_docx_buffer.seek(0)
+        return output_docx_buffer
     except Exception as e:
-        if "tesseract" in str(e).lower(): st.info("PDF to Word (Scanned): Ensure Tesseract is set up for pdf2docx OCR.")
+        if "tesseract" in str(e).lower(): 
+            st.info("PDF to Word (Scanned): Ensure Tesseract is set up for pdf2docx OCR.")
+        # st.error(f"An unexpected error occurred during PDF to Word conversion: {e}") # Error displayed per file by caller
         raise
     finally:
         if temp_pdf_path and os.path.exists(temp_pdf_path):
-            try: os.remove(temp_pdf_path)
-            except Exception: st.warning(f"Could not remove temp PDF: {temp_pdf_path}")
+            try: 
+                os.remove(temp_pdf_path)
+            except Exception: 
+                st.warning(f"Could not remove temp PDF: {temp_pdf_path}")
 
 def create_zip_from_images(images, base_filename, img_format):
     """Creates a ZIP archive containing image files in memory, for a single PDF source."""
@@ -52,14 +77,18 @@ def create_zip_from_images(images, base_filename, img_format):
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for i, img in enumerate(images):
             img_filename = f"{base_filename}_page_{str(i + 1).zfill(len(str(len(images))))}.{img_format.lower()}"
-            img_byte_arr = BytesIO(); save_img = img
-            if img.mode == 'RGBA' and img_format.lower() == 'jpeg': save_img = img.convert('RGB')
-            elif img.mode == 'P': save_img = img.convert('RGB')
-            save_img.save(img_byte_arr, format=img_format.upper()); img_byte_arr = img_byte_arr.getvalue()
+            img_byte_arr = BytesIO()
+            save_img = img
+            if img.mode == 'RGBA' and img_format.lower() == 'jpeg': 
+                save_img = img.convert('RGB')
+            elif img.mode == 'P': 
+                save_img = img.convert('RGB')
+            save_img.save(img_byte_arr, format=img_format.upper())
+            img_byte_arr = img_byte_arr.getvalue() # Get bytes after saving
             zip_file.writestr(img_filename, img_byte_arr)
-    zip_buffer.seek(0); return zip_buffer
+    zip_buffer.seek(0)
+    return zip_buffer
 
-# --- NEW Helper Function for Master ZIP in Section 1 ---
 def create_master_zip_from_s1_results(s1_results_list, img_format):
     """Creates a single ZIP archive from all successfully converted images in s1_results."""
     master_zip_buffer = BytesIO()
@@ -72,7 +101,6 @@ def create_master_zip_from_s1_results(s1_results_list, img_format):
                 num_digits = len(str(len(images)))
 
                 for i, img in enumerate(images):
-                    # Create a unique filename for each image within the master zip
                     page_num_str = str(i + 1).zfill(num_digits)
                     img_filename_in_zip = f"{original_pdf_basename}_page_{page_num_str}.{img_format.lower()}"
                     
@@ -88,10 +116,9 @@ def create_master_zip_from_s1_results(s1_results_list, img_format):
                     zip_file_master.writestr(img_filename_in_zip, img_data_bytes)
                     total_images_added +=1
         if total_images_added == 0:
-            return None # No images to zip
+            return None 
     master_zip_buffer.seek(0)
     return master_zip_buffer
-
 
 @st.cache_data(show_spinner=False)
 def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=True, context_section="Combined"):
@@ -105,14 +132,22 @@ def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=
         output_pdf_buffer.seek(0)
         stxt.success(f"{context_section}-OCR processing on PDF complete!"); time.sleep(2); stxt.empty()
         return output_pdf_buffer.getvalue()
-    except ocrmypdf.exceptions.TesseractNotFoundError: st.error(f"{context_section}-ocrmypdf: Tesseract OCR not found. Check setup."); stxt.empty(); return None
-    except ocrmypdf.exceptions.MissingDependencyError as e: st.error(f"{context_section}-ocrmypdf: Missing dependency: {e}. (e.g., ghostscript)."); stxt.empty(); return None
-    except Exception as e: st.error(f"{context_section}-ocrmypdf: Error during OCR: {e}"); stxt.empty(); return None
+    except ocrmypdf.exceptions.TesseractNotFoundError: 
+        st.error(f"{context_section}-ocrmypdf: Tesseract OCR not found. Check setup."); stxt.empty(); return None
+    except ocrmypdf.exceptions.MissingDependencyError as e: 
+        st.error(f"{context_section}-ocrmypdf: Missing dependency: {e}. (e.g., ghostscript)."); stxt.empty(); return None
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e: # Catch Pillow's error if ocrmypdf passes it up
+        st.error(f"{context_section}-ocrmypdf: Image too large within PDF: {e}. The PDF contains an image that exceeds pixel limits.")
+        stxt.empty(); return None
+    except Exception as e: 
+        st.error(f"{context_section}-ocrmypdf: Error during OCR: {e}"); stxt.empty(); return None
 
 @st.cache_data(show_spinner=False)
 def image_to_single_page_pdf_bytes(image_file_object, filename_for_error="image"):
     """Converts an image UploadedFile object to bytes of a single-page PDF."""
     try:
+        # It's good practice to seek(0) before reading if the object might have been read before.
+        image_file_object.seek(0) 
         img_pil = Image.open(image_file_object) 
         if img_pil.mode == 'RGBA' or img_pil.mode == 'P':
             img_pil = img_pil.convert('RGB')
@@ -120,6 +155,12 @@ def image_to_single_page_pdf_bytes(image_file_object, filename_for_error="image"
         img_pil.save(pdf_buffer, format='PDF', resolution=150.0) 
         pdf_buffer.seek(0)
         return pdf_buffer.getvalue()
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e:
+        st.error(f"Image too large ('{filename_for_error}'): {e}. The image dimensions exceed pixel limits. Please use a smaller image.")
+        return None
+    except UnidentifiedImageError:
+        st.error(f"Cannot identify image file ('{filename_for_error}'). It might be corrupted or an unsupported format.")
+        return None
     except Exception as e:
         st.error(f"Error converting image '{filename_for_error}' to PDF page: {e}")
         return None
@@ -146,9 +187,9 @@ st.sidebar.caption(f"Refreshed: {time.strftime('%Y%m%d-%H%M%S')}")
 # Section 1 (PDF Conversions)
 if 's1_results' not in st.session_state: 
     st.session_state.s1_results = []
-if 's1_conversion_type' not in st.session_state: # To remember selected conversion type for master zip
+if 's1_conversion_type' not in st.session_state: 
     st.session_state.s1_conversion_type = "Images" 
-if 's1_img_format' not in st.session_state: # To remember image format for master zip
+if 's1_img_format' not in st.session_state: 
     st.session_state.s1_img_format = "PNG"
 
 
@@ -177,19 +218,17 @@ if uploaded_pdf_files_s1:
     st.markdown("---"); col1_s1, col2_s1 = st.columns([1, 2])
     with col1_s1:
         st.subheader("Conversion Options")
-        # Store conversion type in session state for master zip access
         st.session_state.s1_conversion_type = st.radio( 
             "Convert All Uploaded PDFs To:", 
             ("Images", "Word Document (.docx)"), 
-            key="conversion_type_s1_radio", # Changed key to avoid conflict if 'conversion_type_s1' was used elsewhere
+            key="conversion_type_s1_radio", 
             index=0 if st.session_state.s1_conversion_type == "Images" else 1,
             horizontal=True,
-            on_change=lambda: st.session_state.update(s1_results=[]) # Clear results on type change
+            on_change=lambda: st.session_state.update(s1_results=[]) 
         )
         
         pdf_options_s1 = {}
         if st.session_state.s1_conversion_type == "Images":
-            # Store image format in session state
             st.session_state.s1_img_format = st.selectbox(
                 "Image Format:", 
                 ["PNG", "JPEG"], 
@@ -197,15 +236,15 @@ if uploaded_pdf_files_s1:
                 index=0 if st.session_state.s1_img_format == "PNG" else 1
                 )
             pdf_options_s1['img_format'] = st.session_state.s1_img_format
-            pdf_options_s1['dpi'] = st.slider("Image Quality (DPI):", 72, 600, 200, 10, key="dpi_s1")
+            pdf_options_s1['dpi'] = st.slider("Image Quality (DPI):", 72, 600, 200, 10, key="dpi_s1", help="Lower DPI for very large PDFs if you encounter 'Image too large' errors.")
 
         if st.button("🚀 Convert All PDFs", key="convert_button_s1", use_container_width=True):
-            st.session_state.s1_results = [] # Clear previous batch results
+            st.session_state.s1_results = [] 
             with st.spinner(f"Processing {len(uploaded_pdf_files_s1)} PDF(s)..."):
                 for file_obj in uploaded_pdf_files_s1:
                     result_entry = {
                         'input_filename': file_obj.name, 
-                        'conversion_type': st.session_state.s1_conversion_type, # Use from session state
+                        'conversion_type': st.session_state.s1_conversion_type, 
                         'status': 'failure', 
                         'output': None, 
                         'messages': []
@@ -213,7 +252,7 @@ if uploaded_pdf_files_s1:
                     try:
                         pdf_bytes_in = file_obj.getvalue(); file_obj.seek(0)
                         if st.session_state.s1_conversion_type == "Images":
-                            result_entry['img_format_options'] = pdf_options_s1.copy() # For individual zips
+                            result_entry['img_format_options'] = pdf_options_s1.copy() 
                             images = pdf_to_images_st(pdf_bytes_in, pdf_options_s1['dpi'], pdf_options_s1['img_format'])
                             if images: result_entry.update({'output': images, 'status': 'success', 'messages': [f"{len(images)} images generated."]})
                             else: result_entry['messages'].append("Image conversion returned no images.")
@@ -221,7 +260,10 @@ if uploaded_pdf_files_s1:
                             docx_bytes_io = pdf_to_word_st(pdf_bytes_in)
                             if docx_bytes_io: result_entry.update({'output': docx_bytes_io.getvalue(), 'status': 'success', 'messages': ["Word document generated."]})
                             else: result_entry['messages'].append("Word conversion returned no data.")
-                    except Exception as e: result_entry['messages'].append(f"Error processing '{file_obj.name}': {str(e)}")
+                    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e_bomb: # Catch specific error here too
+                        result_entry['messages'].append(f"Error for '{file_obj.name}': Image too large (Decompression Bomb). Try lower DPI. Details: {e_bomb}")
+                    except Exception as e: 
+                        result_entry['messages'].append(f"Error processing '{file_obj.name}': {str(e)}")
                     st.session_state.s1_results.append(result_entry)
             if st.session_state.s1_results: st.success(f"Batch conversion of {len(uploaded_pdf_files_s1)} PDF(s) attempted.")
             else: st.warning("No PDFs were processed in this batch.")
@@ -236,10 +278,9 @@ if uploaded_pdf_files_s1:
                         if result['conversion_type'] == "Images":
                             successful_image_conversions += 1
                             images_output = result['output']
-                            img_opts_exp = result['img_format_options'] # Use options stored with result for this expander
+                            img_opts_exp = result['img_format_options'] 
                             base_fn_exp = os.path.splitext(result['input_filename'])[0]
                             st.write(result['messages'][0] if result['messages'] else f"{len(images_output)} image(s).")
-                            # Individual ZIP download
                             zip_buffer_individual = create_zip_from_images(images_output, base_fn_exp, img_opts_exp['img_format'])
                             st.download_button(f"⬇️ Download These Images (.zip)", zip_buffer_individual, f"{base_fn_exp}_images.zip", "application/zip", key=f"s1_dl_zip_ind_{idx}_{base_fn_exp}", use_container_width=True)
                             for i, img_res in enumerate(images_output):
@@ -251,15 +292,14 @@ if uploaded_pdf_files_s1:
                     else: 
                         for msg in result['messages']: st.error(msg)
             
-            # --- Master ZIP Download Button for Images ---
             if st.session_state.s1_conversion_type == "Images" and successful_image_conversions > 0:
-                st.markdown("---") # Separator
+                st.markdown("---") 
                 st.subheader("Download All Images Together")
                 if st.button("📦 Prepare Master ZIP of All Images", key="prepare_master_zip_s1", use_container_width=True):
                     with st.spinner("Creating master ZIP file..."):
                         master_zip_buffer = create_master_zip_from_s1_results(
                             st.session_state.s1_results, 
-                            st.session_state.s1_img_format # Use session state for current format
+                            st.session_state.s1_img_format 
                             )
                         if master_zip_buffer:
                             st.session_state.s1_master_zip_bytes = master_zip_buffer.getvalue()
@@ -322,8 +362,10 @@ if st.session_state.s2_ordered_items:
         with cols_s2_order[0]: st.write(f"{i+1}.")
         with cols_s2_order[1]:
             if item_type == 'image':
+                # Display image preview, ensure pointer is reset for potential re-reads
+                current_pos = file_obj.tell()
                 st.image(file_obj.getvalue(), width=50, caption="Img")
-                file_obj.seek(0) 
+                file_obj.seek(current_pos) # Reset to original position
             else: st.markdown(f"📄 **PDF**", help=item_name)
         with cols_s2_order[2]: st.write(item_name)
         with cols_s2_order[3]: 
@@ -371,10 +413,13 @@ if st.session_state.s2_ordered_items:
 
                 pdf_item_bytes_s2 = None
                 if item_type_s2 == 'image':
+                    # Ensure file pointer is at the beginning before passing to image_to_single_page_pdf_bytes
+                    file_obj_s2.seek(0) 
                     pdf_item_bytes_s2 = image_to_single_page_pdf_bytes(file_obj_s2, filename_for_error=item_name_s2)
                 elif item_type_s2 == 'pdf':
-                    pdf_item_bytes_s2 = file_obj_s2.getvalue()
                     file_obj_s2.seek(0)
+                    pdf_item_bytes_s2 = file_obj_s2.getvalue()
+                    file_obj_s2.seek(0) # Good practice to reset after getvalue if it might be used again
                 
                 if pdf_item_bytes_s2:
                     try:
