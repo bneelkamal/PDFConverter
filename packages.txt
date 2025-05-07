@@ -10,3 +10,4 @@ tesseract-ocr-fra
 tesseract-ocr-spa
 tesseract-ocr-jpn
 tesseract-ocr-chi-sim
+ghostscript
