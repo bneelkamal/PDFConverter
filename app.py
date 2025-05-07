@@ -196,7 +196,7 @@ if 's3_is_ocr_applied' not in st.session_state: st.session_state.s3_is_ocr_appli
 
 
 # --- UI Section 1: PDF Conversions (Unchanged) ---
-st.header("1. Convert PDF(s)")
+st.header("1. Convert PDF(s) to Image/Word")
 # ... (Section 1 code remains the same as your last version) ...
 uploaded_pdf_files_s1 = st.file_uploader( "Upload one or more PDF files", type=["pdf"], key="pdf_uploader_key_s1", accept_multiple_files=True)
 if uploaded_pdf_files_s1:
@@ -252,7 +252,7 @@ if uploaded_pdf_files_s1:
 
 # --- UI Section 2: Image to PDF Conversion (Unchanged) ---
 st.divider()
-st.header("2. Combine Images to PDF")
+st.header("2. Combine Images to PDF with OCR (optional)")
 # ... (Section 2 code remains the same as your last version) ...
 uploaded_image_files_s2 = st.file_uploader("Upload image(s) (PNG, JPG, etc.)", type=["png", "jpg", "jpeg", "bmp", "tiff"], accept_multiple_files=True, key="uploader_s2")
 if uploaded_image_files_s2:
@@ -310,7 +310,7 @@ if st.session_state.ordered_image_files:
 
 # --- UI Section 3: Merge Multiple PDFs (with optional OCR) ---
 st.divider()
-st.header("3. Merge & Optionally OCR PDFs")
+st.header("3. Merge  PDF's with OCR (optional)")
 uploaded_pdf_files_s3 = st.file_uploader(
     "Upload two or more PDF files to merge",
     type=["pdf"],
