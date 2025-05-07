@@ -13,13 +13,12 @@ import time
 import pytesseract 
 from pypdf import PdfWriter, PdfReader, __version__ as pypdf_version
 import ocrmypdf # For calling ocrmypdf.ocr()
-# Import specific exceptions from ocrmypdf to handle them correctly
+# Import specific exceptions from ocrmypdf that are known to be available
 from ocrmypdf.exceptions import (
     MissingDependencyError as OCRmyPDFMissingDependencyError,
-    # TesseractError is not directly exposed here, removed import
     EncryptedPdfError as OCRmyPDFEncryptedPdfError, 
-    PriorOcrFoundError as OCRmyPDFPriorOcrFoundError, 
-    OcrmypdfError as OCRmyPDFGeneralError # Base error for ocrmypdf issues
+    PriorOcrFoundError as OCRmyPDFPriorOcrFoundError
+    # OcrmypdfError is not directly imported; will be caught by general Exception
 )
 
 # --- Configuration & Page Setup ---
@@ -139,9 +138,7 @@ def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=
         stxt.success(f"{context_section}-OCR processing on PDF complete!"); time.sleep(2); stxt.empty()
         return output_pdf_buffer.getvalue()
     except OCRmyPDFMissingDependencyError as e: 
-        # This will catch missing 'tesseract' or 'gs' (Ghostscript)
         st.error(f"{context_section}-ocrmypdf: Missing system dependency: {e}. Ensure Tesseract and Ghostscript are installed and in PATH (or packages.txt for deployment)."); stxt.empty(); return None
-    # Removed specific TesseractError catch as it's not directly available
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as e: 
         st.error(f"{context_section}-ocrmypdf: Image too large within PDF: {e}. The PDF contains an image that exceeds pixel limits.")
         stxt.empty(); return None
@@ -151,10 +148,10 @@ def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=
         st.warning(f"{context_section}-ocrmypdf: PDF already has OCR. Set 'force_ocr=True' if re-processing is intended (already True by default here)."); 
         output_pdf_buffer.seek(0) 
         stxt.success(f"{context_section}-OCR processing (prior OCR found, re-processed or skipped based on settings)."); time.sleep(2); stxt.empty()
-        return output_pdf_buffer.getvalue() if output_pdf_buffer.getbuffer().nbytes > 0 else None
-    except OCRmyPDFGeneralError as e: # Catch other ocrmypdf specific errors
-        st.error(f"{context_section}-ocrmypdf: An ocrmypdf specific error occurred: {e}"); stxt.empty(); return None
-    except Exception as e: # General fallback for unexpected errors, including potential Tesseract runtime issues surfaced by ocrmypdf
+        # Check if buffer has content after potential skip
+        return output_pdf_buffer.getvalue() if output_pdf_buffer.getbuffer().nbytes > 0 else None 
+    # Removed specific OcrmypdfError catch
+    except Exception as e: # General fallback for unexpected errors, including other ocrmypdf issues or Tesseract runtime problems
         st.error(f"{context_section}-ocrmypdf: An unexpected error occurred during OCR: {e}"); stxt.empty(); return None
 
 @st.cache_data(show_spinner=False)
@@ -497,4 +494,3 @@ if st.session_state.s2_ordered_items:
 # Final info message
 if not uploaded_pdf_files_s1 and not st.session_state.s2_ordered_items:
     st.info("☝️ Upload files in Section 1 (PDF Conversion) or Section 2 (Combine Files) to get started.")
-
