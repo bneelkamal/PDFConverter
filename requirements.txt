@@ -4,3 +4,4 @@ Pillow
 pdf2docx
 pytesseract
 pypdf
+ocrmypdf
