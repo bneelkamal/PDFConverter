@@ -9,9 +9,9 @@ from pdf2docx import Converter
 import base64
 import time
 
-import pytesseract # For image to single-page OCR'd PDF (if ever needed directly, less so now)
+import pytesseract 
 from pypdf import PdfWriter, PdfReader, __version__ as pypdf_version
-import ocrmypdf # For final PDF OCR
+import ocrmypdf 
 
 # --- Configuration & Page Setup ---
 st.set_page_config(page_title="File Converter Hub", layout="wide", initial_sidebar_state="expanded")
@@ -47,7 +47,7 @@ def pdf_to_word_st(pdf_bytes):
             except Exception: st.warning(f"Could not remove temp PDF: {temp_pdf_path}")
 
 def create_zip_from_images(images, base_filename, img_format):
-    """Creates a ZIP archive containing image files in memory."""
+    """Creates a ZIP archive containing image files in memory, for a single PDF source."""
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for i, img in enumerate(images):
@@ -58,6 +58,40 @@ def create_zip_from_images(images, base_filename, img_format):
             save_img.save(img_byte_arr, format=img_format.upper()); img_byte_arr = img_byte_arr.getvalue()
             zip_file.writestr(img_filename, img_byte_arr)
     zip_buffer.seek(0); return zip_buffer
+
+# --- NEW Helper Function for Master ZIP in Section 1 ---
+def create_master_zip_from_s1_results(s1_results_list, img_format):
+    """Creates a single ZIP archive from all successfully converted images in s1_results."""
+    master_zip_buffer = BytesIO()
+    with zipfile.ZipFile(master_zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file_master:
+        total_images_added = 0
+        for result_entry in s1_results_list:
+            if result_entry['status'] == 'success' and result_entry['conversion_type'] == 'Images':
+                images = result_entry['output']
+                original_pdf_basename = os.path.splitext(result_entry['input_filename'])[0]
+                num_digits = len(str(len(images)))
+
+                for i, img in enumerate(images):
+                    # Create a unique filename for each image within the master zip
+                    page_num_str = str(i + 1).zfill(num_digits)
+                    img_filename_in_zip = f"{original_pdf_basename}_page_{page_num_str}.{img_format.lower()}"
+                    
+                    img_byte_arr = BytesIO()
+                    save_img = img
+                    if img.mode == 'RGBA' and img_format.lower() == 'jpeg':
+                        save_img = img.convert('RGB')
+                    elif img.mode == 'P':
+                        save_img = img.convert('RGB')
+                    
+                    save_img.save(img_byte_arr, format=img_format.upper())
+                    img_data_bytes = img_byte_arr.getvalue()
+                    zip_file_master.writestr(img_filename_in_zip, img_data_bytes)
+                    total_images_added +=1
+        if total_images_added == 0:
+            return None # No images to zip
+    master_zip_buffer.seek(0)
+    return master_zip_buffer
+
 
 @st.cache_data(show_spinner=False)
 def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=True, context_section="Combined"):
@@ -83,7 +117,7 @@ def image_to_single_page_pdf_bytes(image_file_object, filename_for_error="image"
         if img_pil.mode == 'RGBA' or img_pil.mode == 'P':
             img_pil = img_pil.convert('RGB')
         pdf_buffer = BytesIO()
-        img_pil.save(pdf_buffer, format='PDF', resolution=150.0) # Good default resolution
+        img_pil.save(pdf_buffer, format='PDF', resolution=150.0) 
         pdf_buffer.seek(0)
         return pdf_buffer.getvalue()
     except Exception as e:
@@ -112,10 +146,15 @@ st.sidebar.caption(f"Refreshed: {time.strftime('%Y%m%d-%H%M%S')}")
 # Section 1 (PDF Conversions)
 if 's1_results' not in st.session_state: 
     st.session_state.s1_results = []
+if 's1_conversion_type' not in st.session_state: # To remember selected conversion type for master zip
+    st.session_state.s1_conversion_type = "Images" 
+if 's1_img_format' not in st.session_state: # To remember image format for master zip
+    st.session_state.s1_img_format = "PNG"
+
 
 # Section 2 (Consolidated Combine Files)
 if 's2_ordered_items' not in st.session_state: 
-    st.session_state.s2_ordered_items = [] # List of dicts: {'file': UploadedFile, 'type': 'pdf'/'image', 'id': file.id, 'name': file.name}
+    st.session_state.s2_ordered_items = [] 
 if 's2_last_uploaded_file_ids' not in st.session_state: 
     st.session_state.s2_last_uploaded_file_ids = []
 if 's2_final_pdf_bytes' not in st.session_state: 
@@ -126,43 +165,59 @@ if 's2_is_ocr_applied' not in st.session_state:
     st.session_state.s2_is_ocr_applied = False
 
 
-# --- UI Section 1: PDF Conversions (Largely Unchanged) ---
+# --- UI Section 1: PDF Conversions ---
 st.header("1. Convert PDF(s) to Other Formats")
 uploaded_pdf_files_s1 = st.file_uploader(
     "Upload one or more PDF files", 
     type=["pdf"], 
-    key="pdf_uploader_s1", # Unique key
+    key="pdf_uploader_s1", 
     accept_multiple_files=True
 )
 if uploaded_pdf_files_s1:
     st.markdown("---"); col1_s1, col2_s1 = st.columns([1, 2])
     with col1_s1:
         st.subheader("Conversion Options")
-        pdf_conversion_type_s1 = st.radio( 
+        # Store conversion type in session state for master zip access
+        st.session_state.s1_conversion_type = st.radio( 
             "Convert All Uploaded PDFs To:", 
             ("Images", "Word Document (.docx)"), 
-            key="conversion_type_s1", 
+            key="conversion_type_s1_radio", # Changed key to avoid conflict if 'conversion_type_s1' was used elsewhere
+            index=0 if st.session_state.s1_conversion_type == "Images" else 1,
             horizontal=True,
-            on_change=lambda: st.session_state.update(s1_results=[])
+            on_change=lambda: st.session_state.update(s1_results=[]) # Clear results on type change
         )
+        
         pdf_options_s1 = {}
-        if pdf_conversion_type_s1 == "Images":
-            pdf_options_s1['img_format'] = st.selectbox("Image Format:", ["PNG", "JPEG"], key="img_format_s1")
+        if st.session_state.s1_conversion_type == "Images":
+            # Store image format in session state
+            st.session_state.s1_img_format = st.selectbox(
+                "Image Format:", 
+                ["PNG", "JPEG"], 
+                key="img_format_s1_select",
+                index=0 if st.session_state.s1_img_format == "PNG" else 1
+                )
+            pdf_options_s1['img_format'] = st.session_state.s1_img_format
             pdf_options_s1['dpi'] = st.slider("Image Quality (DPI):", 72, 600, 200, 10, key="dpi_s1")
 
         if st.button("🚀 Convert All PDFs", key="convert_button_s1", use_container_width=True):
-            st.session_state.s1_results = []
+            st.session_state.s1_results = [] # Clear previous batch results
             with st.spinner(f"Processing {len(uploaded_pdf_files_s1)} PDF(s)..."):
                 for file_obj in uploaded_pdf_files_s1:
-                    result_entry = {'input_filename': file_obj.name, 'conversion_type': pdf_conversion_type_s1, 'status': 'failure', 'output': None, 'messages': []}
+                    result_entry = {
+                        'input_filename': file_obj.name, 
+                        'conversion_type': st.session_state.s1_conversion_type, # Use from session state
+                        'status': 'failure', 
+                        'output': None, 
+                        'messages': []
+                        }
                     try:
                         pdf_bytes_in = file_obj.getvalue(); file_obj.seek(0)
-                        if pdf_conversion_type_s1 == "Images":
-                            result_entry['img_format_options'] = pdf_options_s1.copy()
+                        if st.session_state.s1_conversion_type == "Images":
+                            result_entry['img_format_options'] = pdf_options_s1.copy() # For individual zips
                             images = pdf_to_images_st(pdf_bytes_in, pdf_options_s1['dpi'], pdf_options_s1['img_format'])
                             if images: result_entry.update({'output': images, 'status': 'success', 'messages': [f"{len(images)} images generated."]})
                             else: result_entry['messages'].append("Image conversion returned no images.")
-                        elif pdf_conversion_type_s1 == "Word Document (.docx)":
+                        elif st.session_state.s1_conversion_type == "Word Document (.docx)":
                             docx_bytes_io = pdf_to_word_st(pdf_bytes_in)
                             if docx_bytes_io: result_entry.update({'output': docx_bytes_io.getvalue(), 'status': 'success', 'messages': ["Word document generated."]})
                             else: result_entry['messages'].append("Word conversion returned no data.")
@@ -170,25 +225,59 @@ if uploaded_pdf_files_s1:
                     st.session_state.s1_results.append(result_entry)
             if st.session_state.s1_results: st.success(f"Batch conversion of {len(uploaded_pdf_files_s1)} PDF(s) attempted.")
             else: st.warning("No PDFs were processed in this batch.")
+    
     with col2_s1:
         if st.session_state.s1_results:
             st.subheader("Batch Conversion Results")
+            successful_image_conversions = 0
             for idx, result in enumerate(st.session_state.s1_results):
                 with st.expander(f"Results for: {result['input_filename']} (Status: {result['status']})", expanded=(result['status']=='failure')):
                     if result['status'] == 'success':
                         if result['conversion_type'] == "Images":
-                            images_output, img_opts, base_fn = result['output'], result['img_format_options'], os.path.splitext(result['input_filename'])[0]
+                            successful_image_conversions += 1
+                            images_output = result['output']
+                            img_opts_exp = result['img_format_options'] # Use options stored with result for this expander
+                            base_fn_exp = os.path.splitext(result['input_filename'])[0]
                             st.write(result['messages'][0] if result['messages'] else f"{len(images_output)} image(s).")
-                            zip_buffer = create_zip_from_images(images_output, base_fn, img_opts['img_format'])
-                            st.download_button(f"⬇️ Download Images (.zip)", zip_buffer, f"{base_fn}_images.zip", "application/zip", key=f"s1_dl_zip_{idx}_{base_fn}", use_container_width=True)
+                            # Individual ZIP download
+                            zip_buffer_individual = create_zip_from_images(images_output, base_fn_exp, img_opts_exp['img_format'])
+                            st.download_button(f"⬇️ Download These Images (.zip)", zip_buffer_individual, f"{base_fn_exp}_images.zip", "application/zip", key=f"s1_dl_zip_ind_{idx}_{base_fn_exp}", use_container_width=True)
                             for i, img_res in enumerate(images_output):
                                 if i < 2: st.image(img_res, caption=f"Page {i+1}", width=200)
-                                elif i == 2: st.write(f"(+ {len(images_output) - 2} more in ZIP)"); break
+                                elif i == 2: st.write(f"(+ {len(images_output) - 2} more in this ZIP)"); break
                         elif result['conversion_type'] == "Word Document (.docx)":
                             st.write(result['messages'][0] if result['messages'] else "Word doc ready.")
                             st.download_button("⬇️ Download Word (.docx)", result['output'], f"{os.path.splitext(result['input_filename'])[0]}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"s1_dl_docx_{idx}", use_container_width=True)
                     else: 
                         for msg in result['messages']: st.error(msg)
+            
+            # --- Master ZIP Download Button for Images ---
+            if st.session_state.s1_conversion_type == "Images" and successful_image_conversions > 0:
+                st.markdown("---") # Separator
+                st.subheader("Download All Images Together")
+                if st.button("📦 Prepare Master ZIP of All Images", key="prepare_master_zip_s1", use_container_width=True):
+                    with st.spinner("Creating master ZIP file..."):
+                        master_zip_buffer = create_master_zip_from_s1_results(
+                            st.session_state.s1_results, 
+                            st.session_state.s1_img_format # Use session state for current format
+                            )
+                        if master_zip_buffer:
+                            st.session_state.s1_master_zip_bytes = master_zip_buffer.getvalue()
+                        else:
+                            st.session_state.s1_master_zip_bytes = None
+                            st.warning("No images were successfully converted to include in a master ZIP.")
+                
+                if 's1_master_zip_bytes' in st.session_state and st.session_state.s1_master_zip_bytes:
+                    time_str_zip = time.strftime('%Y%m%d-%H%M%S')
+                    st.download_button(
+                        label="⬇️ Download All Images from All PDFs (.zip)",
+                        data=st.session_state.s1_master_zip_bytes,
+                        file_name=f"all_converted_images_{time_str_zip}.zip",
+                        mime="application/zip",
+                        key="download_master_zip_s1_final",
+                        use_container_width=True
+                    )
+
         elif uploaded_pdf_files_s1: st.info("Select options & click 'Convert All PDFs'.")
 
 
@@ -199,20 +288,20 @@ uploaded_mixed_files_s2 = st.file_uploader(
     "Upload PDF and/or Image files (PNG, JPG, TIFF, etc.)",
     type=["pdf", "png", "jpg", "jpeg", "bmp", "tiff"],
     accept_multiple_files=True,
-    key="mixed_uploader_s2" # Unique key for this uploader
+    key="mixed_uploader_s2" 
 )
 
 if uploaded_mixed_files_s2:
-    current_file_ids_s2 = sorted([f.file_id for f in uploaded_mixed_files_s2]) # Use file_id for better uniqueness
+    current_file_ids_s2 = sorted([f.file_id for f in uploaded_mixed_files_s2]) 
     if st.session_state.s2_last_uploaded_file_ids != current_file_ids_s2:
         st.session_state.s2_ordered_items = []
         for f_obj in uploaded_mixed_files_s2:
             file_type = 'pdf' if f_obj.type == "application/pdf" else 'image'
             st.session_state.s2_ordered_items.append({'file': f_obj, 'type': file_type, 'id': f_obj.file_id, 'name': f_obj.name})
         st.session_state.s2_last_uploaded_file_ids = current_file_ids_s2
-        st.session_state.s2_process_done = False # Reset results if files change
+        st.session_state.s2_process_done = False 
         st.session_state.s2_final_pdf_bytes = None
-else: # Clear if no files are uploaded
+else: 
     if st.session_state.s2_ordered_items or st.session_state.s2_last_uploaded_file_ids:
         st.session_state.s2_ordered_items = []
         st.session_state.s2_last_uploaded_file_ids = []
@@ -253,7 +342,7 @@ if st.session_state.s2_ordered_items:
                                  help="Processes the final combined PDF. Can be very slow. Needs Tesseract & Ghostscript.")
     ocr_lang_code_s2 = "eng" 
     if perform_ocr_s2:
-        ocr_lang_opts_s2 = {"English":"eng", "Spanish":"spa", "French":"fra", "German":"deu", "Other (Manual)":"manual"} # Added manual option
+        ocr_lang_opts_s2 = {"English":"eng", "Spanish":"spa", "French":"fra", "German":"deu", "Other (Manual)":"manual"} 
         sel_lang_name_s2 = st.selectbox("OCR Language (Combined PDF):", list(ocr_lang_opts_s2.keys()), 0, key="ocr_lang_s2")
         ocr_lang_code_s2 = ocr_lang_opts_s2[sel_lang_name_s2]
         if ocr_lang_code_s2 == "manual": 
@@ -308,19 +397,19 @@ if st.session_state.s2_ordered_items:
                 final_combined_pdf_bytes_s2 = None
             else:
                 merged_base_pdf_buffer_s2 = BytesIO()
-                pdf_merger_s2.add_metadata({"/Producer": ""}) # Blank out producer
+                pdf_merger_s2.add_metadata({"/Producer": ""}) 
                 pdf_merger_s2.write(merged_base_pdf_buffer_s2)
                 final_combined_pdf_bytes_s2 = merged_base_pdf_buffer_s2.getvalue()
 
             if final_combined_pdf_bytes_s2 and perform_ocr_s2:
                 status_area_s2.text(f"Step 3: Applying OCR (lang: {ocr_lang_code_s2})... This can be very slow.")
-                if not ocr_lang_code_s2 and ocr_lang_opts_s2.get(sel_lang_name_s2) == "manual": # Check if manual input is empty
+                if not ocr_lang_code_s2 and ocr_lang_opts_s2.get(sel_lang_name_s2) == "manual": 
                      st.error("Manual OCR language code cannot be empty.")
                      final_combined_pdf_bytes_s2 = None 
                 else:
                     final_combined_pdf_bytes_s2 = ocr_existing_pdf_st(final_combined_pdf_bytes_s2, language=ocr_lang_code_s2, context_section="S2-Combined")
             
-            status_area_s2.empty() # Clear status messages
+            status_area_s2.empty() 
 
             if final_combined_pdf_bytes_s2:
                 st.session_state.s2_final_pdf_bytes = final_combined_pdf_bytes_s2
@@ -342,7 +431,7 @@ if st.session_state.s2_ordered_items:
             data=st.session_state.s2_final_pdf_bytes,
             file_name=out_pdf_filename_s2,
             mime="application/pdf",
-            key="download_combined_mixed_s2", # Reusing key from old S4 as it's now the primary combined download
+            key="download_combined_mixed_s2", 
             use_container_width=True
         )
 
