@@ -87,7 +87,8 @@ def images_to_plain_pdf_st(image_file_objects):
     for i, fo in enumerate(image_file_objects):
         fn, ib = fo.name, fo.getvalue(); fo.seek(0)
         stxt.text(f"Processing Img {i+1}/{total} ('{fn}')...")
-        try: img = Image.open(BytesIO(ib)); 
+        try: 
+            img = Image.open(BytesIO(ib)); 
             if img.mode in ['RGBA', 'P']: img = img.convert('RGB')
             pil_imgs.append(img)
         except Exception as e: st.error(f"Error opening '{fn}': {e}"); stxt.empty(); return None
