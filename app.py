@@ -19,8 +19,7 @@ from ocrmypdf.exceptions import (
     MissingDependencyError as OCRmyPDFMissingDependencyError,
     EncryptedPdfError as OCRmyPDFEncryptedPdfError,
     PriorOcrFoundError as OCRmyPDFPriorOcrFoundError,
-    OcrmypdfError, # Import general ocrmypdf error
-    TesseractError # Import Tesseract specific error from ocrmypdf
+    # Removed OcrmypdfError and TesseractError as they are not directly importable from exceptions
 )
 
 # --- Configuration & Page Setup ---
@@ -181,9 +180,8 @@ def ocr_existing_pdf_st(input_pdf_bytes, language='eng', deskew=True, force_ocr=
         stxt.success(f"{context_section}-OCR processing (prior OCR found)."); time.sleep(2); stxt.empty()
         # Return the content of the buffer if anything was written, otherwise return original bytes
         return output_pdf_buffer.getvalue() if output_pdf_buffer.getbuffer().nbytes > 0 else input_pdf_bytes
-    except (OcrmypdfError, TesseractError) as e: # Catch ocrmypdf's specific error types
-        st.error(f"{context_section}-ocrmypdf runtime error: {e}"); stxt.empty(); traceback.print_exc(); return None
-    except Exception as e: # General fallback for other unexpected issues
+    # Removed explicit catch for OcrmypdfError and TesseractError
+    except Exception as e: # General fallback for other unexpected issues, including OcrmypdfError and TesseractError
         st.error(f"{context_section}-ocrmypdf: An unexpected error occurred during OCR: {e}"); stxt.empty(); traceback.print_exc(); return None
 
 # MODIFIED Function: Image to OCR'd single-page PDF using Pytesseract
